@@ -17,8 +17,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", default="medium", help="Model to use",
                         choices=["tiny", "base", "small", "medium", "large"])
-    parser.add_argument("--non_english", action='store_true',
-                        help="Don't use the english model.")
+    parser.add_argument("--english", action='store_true',
+                        help="Use the english-only models")
     parser.add_argument("--energy_threshold", default=1000,
                         help="Energy level for mic to detect.", type=int)
     parser.add_argument("--record_timeout", default=2,
@@ -26,10 +26,9 @@ def main():
     parser.add_argument("--phrase_timeout", default=3,
                         help="How much empty space between recordings before we "
                              "consider it a new line in the transcription.", type=float)
-    if 'linux' in platform:
-        parser.add_argument("--default_microphone", default='pulse',
-                            help="Default microphone name for SpeechRecognition. "
-                                 "Run this with 'list' to view available Microphones.", type=str)
+    parser.add_argument("--default_microphone", default='pulse',
+                        help="Default microphone name for SpeechRecognition. "
+                             "Run this with 'list' to view available Microphones.", type=str)
     args = parser.parse_args()
 
     # The last time a recording was retrieved from the queue.
@@ -46,24 +45,22 @@ def main():
 
     # Important for linux users.
     # Prevents permanent application hang and crash by using the wrong Microphone
-    if 'linux' in platform:
-        mic_name = args.default_microphone
-        if not mic_name or mic_name == 'list':
-            print("Available microphone devices are: ")
-            for index, name in enumerate(sr.Microphone.list_microphone_names()):
-                print(f"Microphone with name \"{name}\" found")
-            return
-        else:
-            for index, name in enumerate(sr.Microphone.list_microphone_names()):
-                if mic_name in name:
-                    source = sr.Microphone(sample_rate=16000, device_index=index)
-                    break
+    mic_name = args.default_microphone
+    if not mic_name or mic_name == 'list':
+        print("Available microphone devices are: ")
+        for index, name in enumerate(sr.Microphone.list_microphone_names()):
+            print(f"Microphone with name \"{name}\" found")
+        return
     else:
-        source = sr.Microphone(sample_rate=16000)
-
+        for index, name in enumerate(sr.Microphone.list_microphone_names()):
+            if mic_name in name:
+                source = sr.Microphone(sample_rate=16000, device_index=index)
+                break
+    
     # Load / Download model
     model = args.model
-    if args.model != "large" and not args.non_english:
+
+    if args.model != "large" and args.english:
         model = model + ".en"
     audio_model = whisper.load_model(model)
 
@@ -118,7 +115,7 @@ def main():
                 audio_np = np.frombuffer(phrase_bytes, dtype=np.int16).astype(np.float32) / 32768.0
 
                 # Read the transcription.
-                result = audio_model.transcribe(audio_np, fp16=torch.cuda.is_available())
+                result = audio_model.transcribe(audio_np, fp16=torch.cuda.is_available(), task='translate')
                 text = result['text'].strip()
 
                 # If we detected a pause between recordings, add a new item to our transcription.
